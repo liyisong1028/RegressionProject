@@ -1,0 +1,142 @@
+---
+title: "Regression Models"
+author: "Yisong Li"
+date: "Sunday, March 22, 2015"
+output: html_document
+---
+
+## Executive Summary
+
+The study explored the mtcars dataset from the datasets library using linear regression method. The study specially focus on the linear relationship between mpg and transmission type as well as other varibles of cars. The main findings of this study are:
+
+* Transmission type is directly correlated to the mpg
+
+* In the simple linear regression model, the mpg difference between manual and automatic transmission car is 7.245
+
+* In the final multivariable regression model, hold other variables constant, and the car has a 1/4 mile time of 14 seconds, the mpg difference between manual and automatic transmission car is 5.797
+
+* The intersept of weight and transmission type has significant imapct on mpg
+
+## Exploratory Analysis
+Manipulate the dataset, and performed some exploratory anaylsis. As showed in the pairs graphs below, although most variables show strong correlation with the mpg, it is clear that there are very high level correlations between each other too.
+```{r Exploratory}
+library(datasets)
+suppressMessages(library(ggplot2))
+suppressMessages(library(GGally))
+data <- mtcars
+data$cyl <- as.factor(data$cyl)
+data$am <- as.factor(data$am)
+levels(data$am) <- c("at", "mn")
+data$gear <- as.factor(data$gear)
+data$carb <- as.factor(data$carb)
+data$vs <- as.factor(data$vs)
+pairs(data)
+ggpairs(data[,c(1,6,7,9)], colour = "am", title = "Mtcars Data Overview")
+```
+
+## Simple linear regression
+Since the project is interested in exploring the relationship between transmission type and MPG, it's logical for me to start with simple linear regression with transmission type (am) as the sole independent variable.
+
+```{r simplelinear}
+fit1 <- lm(mpg ~ am, data = data)
+linear1<-summary(fit1)
+linear1$coef
+plot(mtcars$am, mtcars$mpg, main = "MPG with Transmission Types", 
+     xlab = "Transmission Type", ylab = "MPG")
+abline(fit1)
+```
+
+According to the regression, manual transmission cars generally would have `r round(fit1$coef[[2]],2)` higher mpg than the cars with automatic transmission, which have an average mpg of `r round(fit1$coef[[1]],2)`. This suggests, in term of mpg, cars with manual transmission would in general have better performance. The p-value for the differences is much smaller than 5%, thus I have more than 95% confidence that the cars with manual transmission will have different mpg mean from the cars with automatic transmission.
+
+## Multivariable regression
+Based on the earlier exploratory analysis, we know that there will be a lot of collinearity exist among regressors if we use all of them, because some of the variables in this dataset are highly correlated to each other. 
+
+In order to identify the varibles which have strong correlations, I calculated the correlations between 10 regressors, and draw a heatmap to identify the variables have similar correlations with other regressors. The assumptions are that there are no other available regressors, and the variables with similar correlations with other regressors should carry the similar information to the model.
+
+```{r multilinear1}
+n <- length(mtcars)
+cormt <- matrix(0, n-1, n-1)
+colnames(cormt)<-colnames(data)[2:n]
+rownames(cormt)<-colnames(data)[2:n]
+for (i in 2:n){
+        for (j in 2:n){
+                cormt[i-1,j-1] <- cor(mtcars[,i], mtcars[,j])
+        }
+}
+heatmap(cormt, main = "Variable Correlations Heatmap", ylab = "Regressors", 
+        sub = "Appendix 3")
+```
+
+As the heatmap showed, there are generally 4 types of regressors, type 1 has carb and hp, type 2 has disp, cyl and wt, type 3 has gear, am and drat, and type 4 has vs and qsec. Using the following code, I fit linear models for all possible combinations, and find the combination achieves the minimum Sigma, or residual standard error.
+
+```{r multilinear2}
+fit <- matrix(0, 36, 5)
+colnames(fit)<-c("R1","R2","R3","R4","Sigma"); x <- 0
+for (i in c(11, 4)){
+        for (j in c(3,2,6)){
+                for (m in c(10,9,5)){
+                        for (n in c(8,7)){
+                                y<-summary(lm(data$mpg~data[,i]+data[,j]+data[,m]+data[,n]))
+                                x <- x +1
+                                fit[x,1] <- i; fit[x,2] <- j; fit[x,3] <- m
+                                fit[x,4] <- n; fit[x,5] <- y$sigma
+                        }
+                }
+        }
+}
+colnames(data)[fit[which(fit[,5] == min(fit[,5])),1:4]]
+```
+
+The model acheived the lowest residual standard error with hp, wt, am and qsec as regressor. fit the linear model with those regressor.
+
+```{r multilinear3}
+fit2 <- lm(mpg~ hp + wt + am + qsec, data = data)
+linear2 <- summary(fit2)
+linear2$coef
+```
+
+The p-value of coefficient of regressor hp is much higher than 5%, thus its impact is not significant, when other regressors hold constant. Refit the model without regressor hp.
+
+```{r multilinear4}
+fit3 <- lm(mpg~ wt + am + qsec, data = data)
+linear3 <- summary(fit3)
+linear3$coef
+```
+
+Every regressor has significant impact on the mpg. Fit a new model with intersepts of three regressors.
+```{r multilinear5}
+fit4 <- lm(mpg~ wt + am + qsec + wt*am + am*qsec + qsec*wt, data = data)
+linear4 <- summary(fit4)
+linear4$coef
+```
+
+The intersept of wt and am has significant impact on the model, however, the intersept of am and qsec, and the intersept of qsec and wt do not have significant impact on the model. Therefore, I refit the model with mt, am, qsec and the intersept of wt and am.
+
+```{r multilinear6}
+fit5 <- lm(mpg~ wt + am + qsec + wt*am, data = data)
+linear5 <- summary(fit5)
+linear5$coef
+sigma <- vector()
+sigma[1] <- linear1$sigma
+sigma[2] <- linear2$sigma
+sigma[3] <- linear3$sigma
+sigma[4] <- linear4$sigma
+sigma[5] <- linear5$sigma
+names(sigma)<-c("Model 1","Model 2", "Model 3", "Model 4", "Model 5")
+sigma
+```
+
+The final multivariable regression model has a residual standard error of `r round(linear5$sigma,2)`, which is the lowest among all five models. Appendix 4 lists the residual standard errors for all five models. However, the coeficient of intercept in this model is not statistically significant.
+
+## Interpretation
+In order to help interpretation, I changed the data, specifically the wt and qsec variables, using the following code. 
+```{r interpretation}
+data2 <- data[,c(1,6,7,9)]
+data2$wt <- data2$wt/2 - 1      #Adjust the weight unit to ton, and adjust the zero value to 1 ton
+data2$qsec <- data2$qsec - 14   #Adjust the zero value of qsec to 14 seconds
+fit6 <- lm(mpg~ wt + am + qsec + wt*am, data = data2)
+linear6 <- summary(fit6)
+linear6
+```
+
+In this final model, the coefficient of intercept suggests that when a car weight one ton, with automatic transmission, and has a 1/4 mile time of 14 seconds, the car's mpg is expected to be `r round(linear6$coef[1,1],2)`. The coefficient of wt suggests that when a car has automatic transmission, and has a 1/4 mile time of 14 seconds, the car's mpg will decrease `r round(linear6$coef[2,1],2)` for every ton of weight increase. The coefficient of am suggests that when a car weight one ton, and has a 1/4 mile time of 14 seconds, the car's mpg would be `r round(linear6$coef[3,1],2)` higher if the car has a manual transmission instead of automatic transmission. The coefficient of qsec suggests that when a car weight one ton, and has automatic transmission, for every one second increase in 1/4 mile time, its mpg would increase by `r round(linear6$coef[4,1],2)`. The coefficient of the intercept of wt and am suggests that when a car has a 1/4 mile time of 14 seconds, the manual transmission will accelerate the speed of decrease in mpg for each tone of weight by `r round(-linear6$coef[5,1],2)`.
